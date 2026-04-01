@@ -1,0 +1,21 @@
+name = "abhinav-portfolio-ai"
+main = "worker/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Workers AI binding removed — both LLM calls now use Gemini Flash (zero Neurons)
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "7aea552fb5ad48658640e63eb910c2b8"
+preview_id = "82a316e7e7a24437b4454b2977734153"
+
+# After running:
+#   wrangler kv namespace create "RATE_LIMIT_KV"
+#   wrangler kv namespace create "RATE_LIMIT_KV" --preview
+# paste the returned IDs above.
+
+# Gemini API key — set once via CLI, never commit to source:
+#   wrangler secret put GEMINI_API_KEY
+
+# abhinav-portfolio-ai.abhinav-sachdeva9.workers.dev
