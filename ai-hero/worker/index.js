@@ -275,7 +275,7 @@ async function checkRateLimit(env, ip) {
   const ipN = parseInt(ipCount || "0", 10);
   const globalN = parseInt(globalCount || "0", 10);
 
-  if (ipN >= 40) return { limited: true, reason: "per-ip" };
+  if (ipN >= 30) return { limited: true, reason: "per-ip" };
   if (globalN >= 160) return { limited: true, reason: "global" };
 
   await Promise.all([
@@ -285,7 +285,7 @@ async function checkRateLimit(env, ip) {
     }),
   ]);
 
-  return { limited: false, ipCount: ipN + 1 };
+  return { limited: false, globalCount: globalN + 1 };
 }
 
 // ─── Fake-stream a buffered string as SSE ─────────────────────────────────────
@@ -377,7 +377,7 @@ async function handleChat(request, env, ctx) {
       sseHeaders,
     );
   }
-  const tier = getTierForCount(rateCheck.ipCount);
+  const tier = getTierForCount(rateCheck.globalCount);
   // console.log(tier);
 
   // Normalize input (unicode tricks, zero-width chars) + basic length heuristic
