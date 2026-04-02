@@ -11,14 +11,15 @@ const WORKER_URL = import.meta.env.VITE_WORKER_URL || '/chat';
  * @param {(token: string) => void} onToken - Called for each streamed token chunk
  * @param {() => void} onDone - Called when the stream ends
  * @param {(error: Error) => void} onError - Called on network/parse error
+ * @param {{ role: string, text: string }[]} [history] - Prior conversation messages
  */
-export async function sendMessage(message, onToken, onDone, onError) {
+export async function sendMessage(message, onToken, onDone, onError, history = []) {
   let response;
   try {
     response = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     });
   } catch (err) {
     onError(new Error('Network error — please check your connection.'));

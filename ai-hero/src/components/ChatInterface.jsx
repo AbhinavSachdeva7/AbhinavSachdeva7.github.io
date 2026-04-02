@@ -37,6 +37,10 @@ export default function ChatInterface({ orbRef }) {
     setIsLoading(true);
     setStreamingText('');
 
+    // Snapshot prior conversation before adding the new user message.
+    // This becomes the history for Call 1 in the worker.
+    const history = messages;
+
     // Add user message
     setMessages(prev => [...prev, { role: 'user', text: msg }]);
 
@@ -58,6 +62,7 @@ export default function ChatInterface({ orbRef }) {
         setIsLoading(false);
         orbRef?.current?.respondEnd();
         increment();
+        inputRef.current?.focus();
       },
       (_err) => {
         setMessages(prev => [
@@ -67,9 +72,11 @@ export default function ChatInterface({ orbRef }) {
         setStreamingText('');
         setIsLoading(false);
         orbRef?.current?.respondEnd();
-      }
+        inputRef.current?.focus();
+      },
+      history,
     );
-  }, [input, isLoading, isExhausted, orbRef, increment]);
+  }, [input, messages, isLoading, isExhausted, orbRef, increment]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

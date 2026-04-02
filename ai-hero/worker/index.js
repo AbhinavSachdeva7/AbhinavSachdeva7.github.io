@@ -208,7 +208,14 @@ async function callGemini(
   temperature,
   env,
   tier,
+  history = [],
 ) {
+  // Convert { role, text } history into OpenAI-style message turns
+  const historyMessages = history.map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: m.text,
+  }));
+
   const provider = PROVIDERS[tier.provider];
   const url = `${provider.baseURL}/chat/completions`;
   const res = await fetch(url, {
@@ -221,6 +228,7 @@ async function callGemini(
       model: tier.model,
       messages: [
         { role: "system", content: systemPrompt },
+        ...historyMessages,
         { role: "user", content: userMessage },
       ],
       max_tokens: maxOutputTokens,
@@ -326,7 +334,13 @@ async function handleChat(request, env, ctx) {
     });
   }
 
-  const { message } = body;
+  const { message, history: rawHistory } = body;
+  // Accept up to 20 prior turns; each must have role + text strings
+  const history = Array.isArray(rawHistory)
+    ? rawHistory
+        .filter((m) => m && typeof m.role === "string" && typeof m.text === "string")
+        .slice(-20)
+    : [];
   const origin = request.headers.get("Origin") || "";
   const sseHeaders = {
     "Content-Type": "text/event-stream",
@@ -389,6 +403,7 @@ async function handleChat(request, env, ctx) {
       0.7,
       env,
       tier,
+      history,
     );
   } catch (err) {
     console.error("Call 1 (Gemini generate) error:", err);
@@ -417,9 +432,14 @@ async function handleChat(request, env, ctx) {
   // ── CALL 2: Safety check via Gemini Flash (different system prompt) ────────
   let isSafe = true;
   try {
+    // Build conversation context for the safety checker so it can judge
+    // whether the answer is relevant to the ongoing conversation.
+    const historyContext = history.length > 0
+      ? history.map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${m.text}`).join("\n") + "\n"
+      : "";
     const safetyRaw = await callGemini(
       GEMINI_SAFETY_PROMPT,
-      `Chatbot response to check:\n\n"${answer}"`,
+      `${historyContext}User: ${normalized}\n\nChatbot response to check:\n\n"${answer}"`,
       100,
       0, // temperature 0 for deterministic classification
       env,
