@@ -6,6 +6,16 @@ import { useState, useRef, useEffect } from "react";
 const VANILLA_SITE_URL = "/portfolio/index.html";
 const LINKEDIN_URL = "https://www.linkedin.com/in/sachdeva-abhinav/";
 const GITHUB_URL = "https://github.com/AbhinavSachdeva7";
+const HOME_URL = "/";
+const CONTACT_EMAIL = "abhinav.sachdeva9@gmail.com";
+
+function HomeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+    </svg>
+  );
+}
 
 function LinkedInIcon() {
   return (
@@ -26,6 +36,14 @@ function GitHubIcon() {
 }
 
 const DOCK_ITEMS = [
+  {
+    id: "home",
+    icon: HomeIcon,
+    name: "Home",
+    online: false,
+    action: "home",
+    gradientColors: "#c70039, #7a0020",
+  },
   {
     id: "portfolio",
     emoji: "📁",
@@ -121,7 +139,10 @@ export default function MessageDock() {
           window.location.href = VANILLA_SITE_URL;
           break;
         case "contact":
-          window.location.href = `${VANILLA_SITE_URL}#contact`;
+          window.location.href = `mailto:${CONTACT_EMAIL}`;
+          break;
+        case "home":
+          window.location.href = HOME_URL;
           break;
         case "linkedin":
           window.open(LINKEDIN_URL, "_blank");
