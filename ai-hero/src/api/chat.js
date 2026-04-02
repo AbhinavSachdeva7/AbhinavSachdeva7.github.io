@@ -27,7 +27,11 @@ export async function sendMessage(message, onToken, onDone, onError, history = [
   }
 
   if (!response.ok) {
-    onError(new Error(`Server error: ${response.status}`));
+    if (response.status === 429) {
+      onError(new Error('QUOTA_EXHAUSTED'));
+    } else {
+      onError(new Error(`Server error: ${response.status}`));
+    }
     return;
   }
 

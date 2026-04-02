@@ -65,9 +65,15 @@ export default function ChatInterface({ orbRef }) {
         inputRef.current?.focus();
       },
       (_err) => {
+        const isQuota = _err?.message === 'QUOTA_EXHAUSTED';
         setMessages(prev => [
           ...prev,
-          { role: 'assistant', text: "Sorry, I couldn't connect. Please try again in a moment!" },
+          {
+            role: 'assistant',
+            text: isQuota
+              ? "The AI is working great — we've just hit the daily API quota! Check back tomorrow."
+              : "Sorry, I couldn't connect. Please try again in a moment!",
+          },
         ]);
         setStreamingText('');
         setIsLoading(false);

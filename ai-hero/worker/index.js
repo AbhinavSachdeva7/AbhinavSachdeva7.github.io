@@ -238,7 +238,9 @@ async function callGemini(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`LLM ${res.status}: ${errText.slice(0, 200)}`);
+    const err = new Error(`LLM ${res.status}: ${errText.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
 
   const data = await res.json();
@@ -407,6 +409,9 @@ async function handleChat(request, env, ctx) {
     );
   } catch (err) {
     console.error("Call 1 (Gemini generate) error:", err);
+    if (err.status === 429) {
+      return new Response(null, { status: 429, headers: corsHeaders(origin) });
+    }
     return fallbackSSE(
       "Sorry, I'm having trouble connecting right now. Please try again in a moment!",
       sseHeaders,
