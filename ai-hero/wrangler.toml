@@ -1,5 +1,5 @@
 name = "abhinav-portfolio-ai"
-main = "ai-hero/worker/index.js"
+main = "worker/index.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
