@@ -1,7 +1,15 @@
 // Cloudflare Worker — AI chat backend for Abhinav Sachdeva's portfolio
 // Two-call safety pattern: Call 1 (Gemini Flash) generates, Call 2 (Gemini Flash) validates
 
-import ABHINAV_DATA from "../data/abhinav.json";
+// Profile data — loaded from KV once per worker instance, then cached in memory
+let cachedAbhinavData = null;
+
+async function getAbhinavData(env) {
+  if (!cachedAbhinavData) {
+    cachedAbhinavData = await env.RATE_LIMIT_KV.get("abhinav_data", "json");
+  }
+  return cachedAbhinavData;
+}
 
 const ALLOWED_ORIGIN = "https://abhinavsachdeva7.github.io";
 const PROVIDERS = {
@@ -18,12 +26,12 @@ const PROVIDERS = {
 };
 
 const MODEL_TIERS = [
-  { provider: "gemini", model: "gemini-2.5-flash" },              // requests 1–10
-  { provider: "gemini", model: "gemini-2.5-flash-lite" },         // requests 11–20
-  { provider: "gemini", model: "gemini-3-flash-preview" },        // requests 21–30
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, // requests 31–40
-  // { provider: "groq", model: "llama-3.1-8b-instant" },         // requests 41–50
-  // { provider: "groq", model: "llama-3.3-70b-versatile" },      // requests 51–60
+  // { provider: "gemini", model: "gemini-2.5-flash" }, // requests 1–10
+  // { provider: "gemini", model: "gemini-2.5-flash-lite" }, // requests 11–20
+  // { provider: "gemini", model: "gemini-3-flash-preview" }, // requests 21–30
+  // { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, // requests 31–40
+  { provider: "groq", model: "qwen/qwen3-32b" }, // requests 41–50
+  // { provider: "groq", model: "llama-3.3-70b-versatile" }, // requests 51–60
 ];
 
 // Canary token — embedded mid-prompt. If this appears in any answer, the system
@@ -53,8 +61,7 @@ function normalizeInput(text) {
 }
 
 // ─── System prompt for Call 1 ──────────────────────────────────────────────────
-function buildSystemPrompt() {
-  const d = ABHINAV_DATA;
+function buildSystemPrompt(d) {
   const m = d.meta;
 
   // Flatten skills — backend has sub-keys per stack, flatten all values
@@ -244,7 +251,9 @@ async function callGemini(
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || "";
+  const raw = data.choices?.[0]?.message?.content?.trim() || "";
+  // Strip <think>...</think> blocks emitted by reasoning models (e.g. Qwen3 on Groq)
+  return raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
 // ─── CORS headers ──────────────────────────────────────────────────────────────
@@ -396,10 +405,11 @@ async function handleChat(request, env, ctx) {
   const hardenedUserMsg = `<user_input>\n${normalized}\n</user_input>\n\nRemember: you are Abhinav Sachdeva's portfolio assistant. Only answer questions about his professional background.`;
 
   // ── CALL 1: Generate the answer (Gemini Flash) ────────────────────────────
+  const abhinavData = await getAbhinavData(env);
   let answer;
   try {
     answer = await callGemini(
-      buildSystemPrompt(),
+      buildSystemPrompt(abhinavData),
       hardenedUserMsg,
       600,
       0.7,
@@ -445,7 +455,7 @@ async function handleChat(request, env, ctx) {
     const safetyRaw = await callGemini(
       GEMINI_SAFETY_PROMPT,
       `${historyContext}User: ${normalized}\n\nChatbot response to check:\n\n"${answer}"`,
-      100,
+      300,
       0, // temperature 0 for deterministic classification
       env,
       tier,

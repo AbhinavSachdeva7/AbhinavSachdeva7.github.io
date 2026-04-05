@@ -9,4 +9,12 @@ node_modules/
 ai-hero/node_modules/
 ai-hero/dist/
 ai-hero/.wrangler/
+# ai-hero/wrangler.toml
+ai-hero/wrangler.toml
 ai-hero/.dev.vars
+ai-hero/data/abhinav.json
+
+wrangler.toml
+.wrangler/
+.dev.vars
+data/
