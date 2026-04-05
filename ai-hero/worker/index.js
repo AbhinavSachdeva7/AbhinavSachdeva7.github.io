@@ -26,12 +26,12 @@ const PROVIDERS = {
 };
 
 const MODEL_TIERS = [
-  // { provider: "gemini", model: "gemini-2.5-flash" }, // requests 1–10
-  // { provider: "gemini", model: "gemini-2.5-flash-lite" }, // requests 11–20
-  // { provider: "gemini", model: "gemini-3-flash-preview" }, // requests 21–30
-  // { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, // requests 31–40
+  { provider: "gemini", model: "gemini-2.5-flash" }, // requests 1–10
+  { provider: "gemini", model: "gemini-2.5-flash-lite" }, // requests 11–20
+  { provider: "gemini", model: "gemini-3-flash-preview" }, // requests 21–30
+  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, // requests 31–40
   { provider: "groq", model: "qwen/qwen3-32b" }, // requests 41–50
-  // { provider: "groq", model: "llama-3.3-70b-versatile" }, // requests 51–60
+  { provider: "groq", model: "llama-3.3-70b-versatile" }, // requests 51–60
 ];
 
 // Canary token — embedded mid-prompt. If this appears in any answer, the system
