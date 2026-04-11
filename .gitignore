@@ -16,3 +16,12 @@ ai-hero/data/abhinav.json
 .wrangler/
 .dev.vars
 data/
+.mcp.json
+.windsurfrules
+AGENTS.md
+claude.md
+GEMINI.md
+.claude
+.code-review-graph
+.cursorrules
+.cursor

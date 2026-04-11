@@ -10,3 +10,8 @@ binding = "RATE_LIMIT_KV"
 id = "7aea552fb5ad48658640e63eb910c2b8"
 preview_id = "82a316e7e7a24437b4454b2977734153"
 
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true
+
