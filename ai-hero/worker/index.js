@@ -26,12 +26,12 @@ const PROVIDERS = {
 };
 
 const MODEL_TIERS = [
-  { provider: "groq", model: "qwen/qwen3-32b" }, 
   { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, 
+  { provider: "gemini", model: "gemini-3-flash-preview" }, 
   { provider: "gemini", model: "gemini-2.5-flash" }, 
   { provider: "gemini", model: "gemini-2.5-flash-lite" }, 
-  { provider: "gemini", model: "gemini-3-flash-preview" }, 
   { provider: "groq", model: "llama-3.3-70b-versatile" }, 
+  { provider: "groq", model: "qwen/qwen3-32b" }, 
 ];
 
 // Canary token — embedded mid-prompt. If this appears in any answer, the system
