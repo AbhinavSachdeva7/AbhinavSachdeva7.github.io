@@ -15,6 +15,7 @@ export default function ChatInterface({ orbRef }) {
   const [isLoading, setIsLoading] = useState(false);
   const [greetingVisible, setGreetingVisible] = useState(true);
   const [streamingText, setStreamingText] = useState('');
+  const [statusText, setStatusText] = useState('');
 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -56,31 +57,31 @@ export default function ChatInterface({ orbRef }) {
         setStreamingText(accumulated);
       },
       () => {
-        // Stream done — move accumulated text into messages
+        // Stream done — move accumulated text into messages, clear status
         setMessages(prev => [...prev, { role: 'assistant', text: accumulated }]);
         setStreamingText('');
+        setStatusText('');
         setIsLoading(false);
         orbRef?.current?.respondEnd();
         increment();
         inputRef.current?.focus();
       },
       (_err) => {
-        const isQuota = _err?.message === 'QUOTA_EXHAUSTED';
         setMessages(prev => [
           ...prev,
           {
             role: 'assistant',
-            text: isQuota
-              ? "The AI is working great — we've just hit the daily API quota! Check back tomorrow."
-              : "Sorry, I couldn't connect. Please try again in a moment!",
+            text: "Sorry, I couldn't connect. Please try again in a moment!",
           },
         ]);
         setStreamingText('');
+        setStatusText('');
         setIsLoading(false);
         orbRef?.current?.respondEnd();
         inputRef.current?.focus();
       },
       history,
+      (status) => setStatusText(status),
     );
   }, [input, messages, isLoading, isExhausted, orbRef, increment]);
 
@@ -114,6 +115,13 @@ export default function ChatInterface({ orbRef }) {
               {m.text}
             </div>
           ))}
+
+          {/* Model-switch status note — transient, never enters history */}
+          {statusText && (
+            <div className="chat-bubble chat-bubble--status">
+              {statusText}
+            </div>
+          )}
 
           {/* Streaming bubble */}
           {streamingText && (

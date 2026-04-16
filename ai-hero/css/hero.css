@@ -163,6 +163,17 @@ html, body {
   border-bottom-left-radius: 4px;
 }
 
+.chat-bubble--status {
+  background: transparent;
+  color: var(--text-secondary);
+  align-self: flex-start;
+  font-style: italic;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  padding: 4px 8px;
+  border-radius: 0;
+}
+
 /* Streaming cursor blink */
 .cursor-blink {
   display: inline-block;

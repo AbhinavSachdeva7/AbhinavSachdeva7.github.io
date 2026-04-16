@@ -26,8 +26,8 @@ const PROVIDERS = {
 };
 
 const MODEL_TIERS = [
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, 
   { provider: "gemini", model: "gemini-3-flash-preview" }, 
+  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, 
   { provider: "gemini", model: "gemini-2.5-flash" }, 
   { provider: "gemini", model: "gemini-2.5-flash-lite" }, 
   { provider: "groq", model: "llama-3.3-70b-versatile" }, 
@@ -203,9 +203,8 @@ function validateOutput(text) {
 }
 
 // ─── Gemini API call helper ────────────────────────────────────────────────────
-function getTierForCount(ipCount) {
-  const index = Math.floor((ipCount - 1) / 8);
-  return MODEL_TIERS[Math.min(index, MODEL_TIERS.length - 1)];
+function getTierIndex(globalCount) {
+  return Math.min(Math.floor((globalCount - 1) / 8), MODEL_TIERS.length - 1);
 }
 
 async function callGemini(
@@ -299,28 +298,11 @@ async function checkRateLimit(env, ip) {
   return { limited: false, globalCount: globalN + 1 };
 }
 
-// ─── Fake-stream a buffered string as SSE ─────────────────────────────────────
-function fakeStreamSSE(text, ctx) {
-  const encoder = new TextEncoder();
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-
-  ctx.waitUntil(
-    (async () => {
-      const chunkSize = 5;
-      for (let i = 0; i < text.length; i += chunkSize) {
-        const chunk = text.slice(i, i + chunkSize);
-        await writer.write(
-          encoder.encode(`data: ${JSON.stringify({ token: chunk })}\n\n`),
-        );
-      }
-      await writer.write(encoder.encode("data: [DONE]\n\n"));
-      await writer.close();
-    })(),
-  );
-
-  return readable;
-}
+// ─── SSE status codes for model switching ─────────────────────────────────────
+const SWITCH_STATUS = {
+  429: "The model we're using has hit its rate limit — switching to a backup model for you. Just a moment...",
+  503: "The model is experiencing high demand — switching to a backup model for you. Just a moment...",
+};
 
 // ─── SSE fallback helper ───────────────────────────────────────────────────────
 function fallbackSSE(message, headers) {
@@ -388,8 +370,7 @@ async function handleChat(request, env, ctx) {
       sseHeaders,
     );
   }
-  const tier = getTierForCount(rateCheck.globalCount);
-  // console.log(tier);
+  const startTierIndex = getTierIndex(rateCheck.globalCount);
 
   // Normalize input (unicode tricks, zero-width chars) + basic length heuristic
   const normalized = normalizeInput(message);
@@ -404,99 +385,131 @@ async function handleChat(request, env, ctx) {
   // append a role reminder after the closing tag (fires last in context window)
   const hardenedUserMsg = `<user_input>\n${normalized}\n</user_input>\n\nRemember: you are Abhinav Sachdeva's portfolio assistant. Only answer questions about his professional background.`;
 
-  // ── CALL 1: Generate the answer (Gemini Flash) ────────────────────────────
   const abhinavData = await getAbhinavData(env);
-  let answer;
-  try {
-    answer = await callGemini(
-      buildSystemPrompt(abhinavData),
-      hardenedUserMsg,
-      600,
-      0.7,
-      env,
-      tier,
-      history,
-    );
-  } catch (err) {
-    console.error("Call 1 (Gemini generate) error:", err);
-    if (err.status === 429) {
-      return new Response(null, { status: 429, headers: corsHeaders(origin) });
+
+  // ── Open SSE stream — all responses (tokens, status, fallbacks) go through here ──
+  const encoder = new TextEncoder();
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+
+  const writeEvent = (obj) =>
+    writer.write(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+  const writeTokens = async (text) => {
+    const chunkSize = 5;
+    for (let i = 0; i < text.length; i += chunkSize) {
+      await writeEvent({ token: text.slice(i, i + chunkSize) });
     }
-    return fallbackSSE(
-      "Sorry, I'm having trouble connecting right now. Please try again in a moment!",
-      sseHeaders,
-    );
-  }
+  };
 
-  if (!answer) {
-    return fallbackSSE(
-      "I couldn't generate a response. Please try asking something else!",
-      sseHeaders,
-    );
-  }
+  const finishStream = async (text) => {
+    await writeTokens(text);
+    await writer.write(encoder.encode("data: [DONE]\n\n"));
+    await writer.close();
+  };
 
-  // ── Synchronous output checks (zero cost — canary + red-flag patterns) ────
-  if (!validateOutput(answer)) {
-    console.warn("Output validation failed — canary or red-flag detected");
-    return fallbackSSE(
-      "I'm here to tell you about my work — feel free to ask about my projects, skills, or experience!",
-      sseHeaders,
-    );
-  }
+  ctx.waitUntil(
+    (async () => {
+      // ── CALL 1: Try each model tier, emit status event before switching ──────
+      let answer = null;
+      let successTierIndex = startTierIndex;
 
-  // ── CALL 2: Safety check via Gemini Flash (different system prompt) ────────
-  let isSafe = true;
-  try {
-    // Build conversation context for the safety checker so it can judge
-    // whether the answer is relevant to the ongoing conversation.
-    const historyContext = history.length > 0
-      ? history.map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${m.text}`).join("\n") + "\n"
-      : "";
-    const safetyRaw = await callGemini(
-      GEMINI_SAFETY_PROMPT,
-      `${historyContext}User: ${normalized}\n\nChatbot response to check:\n\n"${answer}"`,
-      300,
-      0, // temperature 0 for deterministic classification
-      env,
-      tier,
-    );
+      for (let i = startTierIndex; i < MODEL_TIERS.length; i++) {
+        const tier = MODEL_TIERS[i];
+        try {
+          // if (i === startTierIndex) { // TESTING: fail first tier only, delay so status is visible
+          //   await new Promise(r => setTimeout(r, 1500));
+          //   throw Object.assign(new Error("test"), { status: 507 });
+          // }
+          answer = await callGemini(
+            buildSystemPrompt(abhinavData),
+            hardenedUserMsg,
+            600,
+            0.7,
+            env,
+            tier,
+            history,
+          );
+          successTierIndex = i;
+          break;
+        } catch (err) {
+          console.error(`Call 1 error on tier ${i} (${tier.model}):`, err);
+          const isRetriable = err.status === 429 || err.status === 503 || err.status === 529;
+          if (isRetriable && i < MODEL_TIERS.length - 1) {
+            const statusCode = err.status === 429 ? 429 : 503;
+            await writeEvent({ status: SWITCH_STATUS[statusCode] });
+            continue;
+          }
+          break;
+        }
+      }
 
-    const cleaned = safetyRaw
-      .replace(/```json?/gi, "")
-      .replace(/```/g, "")
-      .trim();
+      if (!answer) {
+        await finishStream(
+          "Sorry, I'm having trouble connecting right now. Please try again in a moment!",
+        );
+        return;
+      }
 
-    // Heuristic string check before JSON.parse (Gemini can wrap JSON in prose)
-    if (cleaned.includes('"safe":false') || cleaned.includes('"safe": false')) {
-      isSafe = false;
-    } else {
+      // ── Synchronous output checks (canary + red-flag patterns) ──────────────
+      if (!validateOutput(answer)) {
+        console.warn("Output validation failed — canary or red-flag detected");
+        await finishStream(
+          "I'm here to tell you about my work — feel free to ask about my projects, skills, or experience!",
+        );
+        return;
+      }
+
+      // ── CALL 2: Safety check (uses whichever tier succeeded) ────────────────
+      const successTier = MODEL_TIERS[successTierIndex];
+      let isSafe = true;
       try {
-        const parsed = JSON.parse(cleaned);
-        isSafe = parsed.safe !== false;
-      } catch {
-        // Parse failure → fail open, log raw for tuning
-        console.warn("Safety check JSON parse failed, raw:", cleaned);
+        const historyContext = history.length > 0
+          ? history.map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${m.text}`).join("\n") + "\n"
+          : "";
+        const safetyRaw = await callGemini(
+          GEMINI_SAFETY_PROMPT,
+          `${historyContext}User: ${normalized}\n\nChatbot response to check:\n\n"${answer}"`,
+          300,
+          0,
+          env,
+          successTier,
+        );
+
+        const cleaned = safetyRaw
+          .replace(/```json?/gi, "")
+          .replace(/```/g, "")
+          .trim();
+
+        if (cleaned.includes('"safe":false') || cleaned.includes('"safe": false')) {
+          isSafe = false;
+        } else {
+          try {
+            const parsed = JSON.parse(cleaned);
+            isSafe = parsed.safe !== false;
+          } catch {
+            console.warn("Safety check JSON parse failed, raw:", cleaned);
+            isSafe = true;
+          }
+        }
+      } catch (err) {
+        console.error("Call 2 (safety) error:", err);
         isSafe = true;
       }
-    }
-  } catch (err) {
-    // Gemini safety call failed → fail open
-    console.error("Call 2 (Gemini safety) error:", err);
-    isSafe = true;
-  }
 
-  if (!isSafe) {
-    return fallbackSSE(
-      "I'm here to tell you about my work — feel free to ask about my projects, skills, or experience!",
-      sseHeaders,
-    );
-  }
+      if (!isSafe) {
+        await finishStream(
+          "I'm here to tell you about my work — feel free to ask about my projects, skills, or experience!",
+        );
+        return;
+      }
 
-  // ── Fake-stream the validated answer ──────────────────────────────────────
-  return new Response(fakeStreamSSE(answer, ctx), {
-    status: 200,
-    headers: sseHeaders,
-  });
+      // ── Stream the validated answer ──────────────────────────────────────────
+      await finishStream(answer);
+    })(),
+  );
+
+  return new Response(readable, { status: 200, headers: sseHeaders });
 }
 
 // ─── Worker entry point ────────────────────────────────────────────────────────

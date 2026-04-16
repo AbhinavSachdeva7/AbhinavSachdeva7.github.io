@@ -12,8 +12,9 @@ const WORKER_URL = import.meta.env.VITE_WORKER_URL || '/chat';
  * @param {() => void} onDone - Called when the stream ends
  * @param {(error: Error) => void} onError - Called on network/parse error
  * @param {{ role: string, text: string }[]} [history] - Prior conversation messages
+ * @param {(status: string) => void} [onStatus] - Called when the worker emits a model-switch status
  */
-export async function sendMessage(message, onToken, onDone, onError, history = []) {
+export async function sendMessage(message, onToken, onDone, onError, history = [], onStatus) {
   let response;
   try {
     response = await fetch(WORKER_URL, {
@@ -27,11 +28,7 @@ export async function sendMessage(message, onToken, onDone, onError, history = [
   }
 
   if (!response.ok) {
-    if (response.status === 429) {
-      onError(new Error('QUOTA_EXHAUSTED'));
-    } else {
-      onError(new Error(`Server error: ${response.status}`));
-    }
+    onError(new Error(`Server error: ${response.status}`));
     return;
   }
 
@@ -41,14 +38,15 @@ export async function sendMessage(message, onToken, onDone, onError, history = [
     try {
       const text = await response.text();
       // Parse all data: lines and concatenate tokens
-      const tokens = text
-        .split('\n')
-        .filter(line => line.startsWith('data: ') && !line.includes('[DONE]'))
-        .map(line => {
-          try { return JSON.parse(line.slice(6)).token || ''; }
-          catch { return ''; }
-        })
-        .join('');
+      const lines = text.split('\n').filter(line => line.startsWith('data: ') && !line.includes('[DONE]'));
+      let tokens = '';
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.token) tokens += parsed.token;
+          else if (parsed.status && onStatus) onStatus(parsed.status);
+        } catch { /* skip */ }
+      }
       if (tokens) onToken(tokens);
       onDone();
     } catch (err) {
@@ -85,6 +83,8 @@ export async function sendMessage(message, onToken, onDone, onError, history = [
           const parsed = JSON.parse(payload);
           if (parsed.token) {
             onToken(parsed.token);
+          } else if (parsed.status && onStatus) {
+            onStatus(parsed.status);
           }
         } catch {
           // Malformed SSE chunk — skip
