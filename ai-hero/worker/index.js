@@ -26,12 +26,12 @@ const PROVIDERS = {
 };
 
 const MODEL_TIERS = [
-  { provider: "gemini", model: "gemini-3-flash-preview" }, 
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, 
-  { provider: "gemini", model: "gemini-2.5-flash" }, 
-  { provider: "gemini", model: "gemini-2.5-flash-lite" }, 
-  { provider: "groq", model: "llama-3.3-70b-versatile" }, 
-  { provider: "groq", model: "qwen/qwen3-32b" }, 
+  { provider: "gemini", model: "gemini-3.5-flash" },
+  { provider: "gemini", model: "gemini-3.1-flash-lite" },
+  { provider: "gemini", model: "gemini-3-flash-preview" },
+  { provider: "gemini", model: "gemini-2.5-flash-lite" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "groq", model: "qwen/qwen3-32b" },
 ];
 
 // Canary token — embedded mid-prompt. If this appears in any answer, the system
@@ -77,7 +77,7 @@ function buildSystemPrompt(d) {
   // Experience — multi-stack entries get a note; single entries use highlights[0]
   const experienceSummary = d.experience
     .map((e) => {
-      const firstHighlight = e.highlights[0];
+      const firstHighlight = (e.highlights || [])[0] || "";
       if (e.stack_note === "multi_stack") {
         const commonTech = e.tech_common.join(", ");
         return `• ${e.title} at ${e.org} (${e.period}): ${firstHighlight} [Tech: ${commonTech} — backend built in Java/Spring Boot, Python/FastAPI, and Node.js/Express variants]`;
@@ -92,7 +92,8 @@ function buildSystemPrompt(d) {
     .map((p) => {
       if (p.stack_note === "multi_stack") {
         const commonTech = p.tech_common.join(", ");
-        const firstHighlight = p.highlights_common[0];
+        const firstHighlight =
+          (p.highlights_common || [])[0] || p.description || "";
         return `• ${p.name}: ${firstHighlight} [Common tech: ${commonTech} — backend has been built in Java/Spring Boot, Python/FastAPI, and Node.js/Express variants]`;
       }
       const tech = (p.tech || []).slice(0, 5).join(", ");
@@ -228,7 +229,7 @@ async function callGemini(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${provider.apiKey(env)}`,
+      Authorization: `Bearer ${provider.apiKey(env)}`,
     },
     body: JSON.stringify({
       model: tier.model,
@@ -331,7 +332,9 @@ async function handleChat(request, env, ctx) {
   // Accept up to 20 prior turns; each must have role + text strings
   const history = Array.isArray(rawHistory)
     ? rawHistory
-        .filter((m) => m && typeof m.role === "string" && typeof m.text === "string")
+        .filter(
+          (m) => m && typeof m.role === "string" && typeof m.text === "string",
+        )
         .slice(-20)
     : [];
   const origin = request.headers.get("Origin") || "";
@@ -434,7 +437,8 @@ async function handleChat(request, env, ctx) {
           break;
         } catch (err) {
           console.error(`Call 1 error on tier ${i} (${tier.model}):`, err);
-          const isRetriable = err.status === 429 || err.status === 503 || err.status === 529;
+          const isRetriable =
+            err.status === 429 || err.status === 503 || err.status === 529;
           if (isRetriable && i < MODEL_TIERS.length - 1) {
             const statusCode = err.status === 429 ? 429 : 503;
             await writeEvent({ status: SWITCH_STATUS[statusCode] });
@@ -464,9 +468,15 @@ async function handleChat(request, env, ctx) {
       const successTier = MODEL_TIERS[successTierIndex];
       let isSafe = true;
       try {
-        const historyContext = history.length > 0
-          ? history.map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${m.text}`).join("\n") + "\n"
-          : "";
+        const historyContext =
+          history.length > 0
+            ? history
+                .map(
+                  (m) =>
+                    `${m.role === "assistant" ? "Assistant" : "User"}: ${m.text}`,
+                )
+                .join("\n") + "\n"
+            : "";
         const safetyRaw = await callGemini(
           GEMINI_SAFETY_PROMPT,
           `${historyContext}User: ${normalized}\n\nChatbot response to check:\n\n"${answer}"`,
@@ -481,7 +491,10 @@ async function handleChat(request, env, ctx) {
           .replace(/```/g, "")
           .trim();
 
-        if (cleaned.includes('"safe":false') || cleaned.includes('"safe": false')) {
+        if (
+          cleaned.includes('"safe":false') ||
+          cleaned.includes('"safe": false')
+        ) {
           isSafe = false;
         } else {
           try {
